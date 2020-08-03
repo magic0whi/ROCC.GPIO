@@ -28,7 +28,7 @@ int gpio_mode = MODE_UNKNOWN;
 // Board编号1~40
 const int pin_to_gpio[41] = { -1, -1, -1, 89, -1, 88, -1, 55, 100, -1, 102, 84, 70, 85, -1, 86, 103, -1, 101, 97, -1, 98, 2, 96, 104, -1, 76, 68, 69, 83, -1, 87, 0, 80, -1, 82, 64, 79, 65, -1, 27 };
 // BCM编号0~27
-const int pin_to_gpio_bcm[41] = { 69, 89, 88, 55, 83, 87, 76, 104, 98, 97, 96, 0, 80, 100, 102, 64, 84, 70, 82, 65, 27, 86, 103, 101, 2, 79, 85}
+const int pin_to_gpio_bcm[41] = { 68, 69, 89, 88, 55, 83, 87, 76, 104, 98, 97, 96, 0, 80, 100, 102, 64, 84, 70, 82, 65, 27, 86, 103, 101, 2, 79, 85};
 int setup_error = 0;
 
 int check_gpio_priv(void)
@@ -54,7 +54,7 @@ int get_gpio_number(int channel, unsigned int *gpio)
 
     // check channel number is in range
     if ( (gpio_mode == BCM && (channel < 0 || channel > 53))
-      || (gpio_mode == BOARD && (channel < 1 || channel > 40))
+      || (gpio_mode == BOARD && (channel < 1 || channel > 40)))
     {
         PyErr_SetString(PyExc_ValueError, "The channel sent is invalid on a Raspberry Pi");
         return 4;

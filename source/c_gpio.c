@@ -27,8 +27,6 @@ SOFTWARE.
 #include <string.h>
 #include "c_gpio.h"
 
-static volatile uint32_t *gpio_map;
-
 void set_pullupdn(int gpio, int pud)
 {
     char filename[35], pud_c;
@@ -42,12 +40,13 @@ void set_pullupdn(int gpio, int pud)
     close(fd);
 }
 
-void setup_gpio(int gpio, int direction, int pud)
+int setup_gpio(int gpio, int direction, int pud)
 {
-    char str_gpio[4], filename[30]; // GPIO编号最多3位数(还有终止符)
+    char str_gpio[4], filename[34]; // GPIO编号最多3位数(还有终止符)
     int fd, len;
 
-    fd = open("/sys/class/gpio/export", O_WRONLY);
+    if((fd = open("/sys/class/gpio/export", O_WRONLY)) == -1)
+        return SETUP_EXPORT_FAIL;
 
     len = snprintf(str_gpio, sizeof(str_gpio), "%d", gpio); // 转化成char形式再获取字符串长度
     write(fd, str_gpio, (size_t) len);
@@ -55,29 +54,31 @@ void setup_gpio(int gpio, int direction, int pud)
 
     set_pullupdn(gpio, pud); // export后默认是input模式
 
-    snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/value", gpio);
+    snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/direction", gpio);
     fd = open(filename, O_WRONLY);
     if (direction == OUTPUT)
-        write(fd, '0', (size_t) 1);
+        write(fd, "out", (size_t) 4);
     else  // direction == INPUT
-        write(fd, '1', (size_t) 1);
+        write(fd, "in", (size_t) 3);
     close(fd);
+    return 0;
 }
 
 // 返回GPIO的状态
 // Contribution by Eric Ptak <trouch@trouch.com>
 int gpio_function(int gpio)
 {
-    char filename[33], value;
-    int fd, len;
+    char filename[34], value;
+    int fd;
 
     /* return if gpio already exported */
     snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d", gpio);
-    if (access(filename, F_OK) = -1) {
+    if (access(filename, F_OK) == -1) {
         return 0; // 没有export当作input模式看待
     }
 
-    fd = open(filename, O_RDONLY)
+    strcat(filename, "/direction");
+    fd = open(filename, O_RDONLY);
     read(fd, &value, 1);
     close(fd);
     switch (value) // 1=input, 0=output, 4=alt0
@@ -93,15 +94,15 @@ int gpio_function(int gpio)
 
 void output_gpio(int gpio, int value)
 {
-    char filename[30];
+    char filename[34];
     int fd;
 
-    snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/value", gpio);
+    snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/direction", gpio);
     fd = open(filename, O_WRONLY);
-    if (value) // value == HIGH
-        write(fd, '1', (size_t) 1);
+    if (value == OUTPUT)
+        write(fd, "out", (size_t) 4);
     else       // value == LOW
-        write(fd, '0', (size_t) 1);
+        write(fd, "in", (size_t) 3);
     close(fd);
 }
 

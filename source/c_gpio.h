@@ -20,12 +20,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-void setup_gpio(int gpio, int direction, int pud);
+int setup_gpio(int gpio, int direction, int pud);
 int gpio_function(int gpio);
 void output_gpio(int gpio, int value);
 int input_gpio(int gpio);
 
-#define CHECK_DEVFS_FAIL   1 // TODO
+#define SETUP_EXPORT_FAIL   1
 
 #define INPUT  1 // is really 0 for control register! (in mmap mode)
 #define OUTPUT 0 // is really 1 for control register! (in mmap mode)

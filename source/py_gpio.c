@@ -57,7 +57,11 @@ static PyObject *py_cleanup(PyObject *self, PyObject *args, PyObject *kwargs)
 
       // set everything back to input
       if (gpio_direction[gpio] != -1) {
-         setup_gpio(gpio, INPUT, PUD_OFF);
+         if (setup_gpio(gpio, INPUT, PUD_OFF) == SETUP_EXPORT_FAIL)
+         {
+            PyErr_SetString(PyExc_RuntimeError, "No access to /sys/class/gpio/export.  Try running as root!");
+            return;
+         }
          gpio_direction[gpio] = -1;
          found = 1;
       }
@@ -93,7 +97,11 @@ static PyObject *py_cleanup(PyObject *self, PyObject *args, PyObject *kwargs)
          // set everything back to input
          for (i=0; i<54; i++) {
             if (gpio_direction[i] != -1) {
-               setup_gpio(i, INPUT, PUD_OFF);
+               if (setup_gpio(i, INPUT, PUD_OFF) == SETUP_EXPORT_FAIL)
+               {
+                  PyErr_SetString(PyExc_RuntimeError, "No access to /sys/class/gpio/export.  Try running as root!");
+                  return NULL;
+               }
                gpio_direction[i] = -1;
                found = 1;
             }
@@ -154,7 +162,7 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
 
    int setup_one(void) {
       if (get_gpio_number(channel, &gpio))
-         return 0;
+         return 1;
 
       result = gpio_function(gpio);
       if (gpio_warnings &&                             // warnings enabled and
@@ -167,9 +175,14 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
       if (direction == OUTPUT && (initial == LOW || initial == HIGH)) {
          output_gpio(gpio, initial);
       }
-      setup_gpio(gpio, direction, pud);
+
+      if (setup_gpio(gpio, direction, pud) == SETUP_EXPORT_FAIL)
+      {
+         PyErr_SetString(PyExc_RuntimeError, "No access to /sys/class/gpio/export.  Try running as root!");
+         return 1;
+      }
       gpio_direction[gpio] = direction;
-      return 1;
+      return 0;
    }
 
    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Oi|ii", kwlist, &chanlist, &direction, &pud, &initial))
@@ -228,7 +241,7 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
    } else if (chantuple) {
        chancount = PyTuple_Size(chantuple);
    } else {
-       if (!setup_one())
+       if (setup_one())
           return NULL;
        Py_RETURN_NONE;
    }
@@ -255,7 +268,7 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
           return NULL;
       }
 
-      if (!setup_one())
+      if (setup_one())
          return NULL;
    }
 
@@ -909,12 +922,6 @@ PyMODINIT_FUNC PyInit__GPIO(void)
       PyEval_InitThreads();
 
    // register exit functions - last declared is called first
-   if (Py_AtExit(cleanup) != 0)
-   {
-      setup_error = 1;
-      return NULL;
-   }
-
    if (Py_AtExit(event_cleanup_all) != 0)
    {
       setup_error = 1;
