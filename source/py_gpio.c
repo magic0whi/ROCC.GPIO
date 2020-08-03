@@ -37,36 +37,6 @@ struct py_callback
 };
 static struct py_callback *py_callbacks = NULL;
 
-static int mmap_gpio_mem(void)
-{
-   int result;
-
-   if (module_setup)
-      return 0;
-
-   result = setup();
-   if (result == SETUP_DEVMEM_FAIL)
-   {
-      PyErr_SetString(PyExc_RuntimeError, "No access to /dev/mem.  Try running as root!");
-      return 1;
-   } else if (result == SETUP_MALLOC_FAIL) {
-      PyErr_NoMemory();
-      return 2;
-   } else if (result == SETUP_MMAP_FAIL) {
-      PyErr_SetString(PyExc_RuntimeError, "Mmap of GPIO registers failed");
-      return 3;
-   } else if (result == SETUP_CPUINFO_FAIL) {
-      PyErr_SetString(PyExc_RuntimeError, "Unable to open /proc/cpuinfo");
-      return 4;
-   } else if (result == SETUP_NOT_RPI_FAIL) {
-      PyErr_SetString(PyExc_RuntimeError, "Not running on a RPi!");
-      return 5;
-   } else { // result == SETUP_OK
-      module_setup = 1;
-      return 0;
-   }
-}
-
 // python function cleanup(channel=None)
 static PyObject *py_cleanup(PyObject *self, PyObject *args, PyObject *kwargs)
 {
@@ -115,7 +85,7 @@ static PyObject *py_cleanup(PyObject *self, PyObject *args, PyObject *kwargs)
       return NULL;
    }
 
-   if (module_setup && !setup_error) {
+   if (!setup_error) {
       if (channel == -666 && chancount == -666) {   // channel not set - cleanup everything
          // clean up any /sys/class exports
          event_cleanup_all();
@@ -175,33 +145,23 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
    unsigned int gpio;
    int channel = -1;
    int direction;
-   int i, chancount;
    PyObject *chanlist = NULL;
    PyObject *chantuple = NULL;
-   PyObject *tempobj;
    int pud = PUD_OFF + PY_PUD_CONST_OFFSET;
    int initial = -1;
    static char *kwlist[] = {"channel", "direction", "pull_up_down", "initial", NULL};
-   int func;
+   int result;
 
    int setup_one(void) {
       if (get_gpio_number(channel, &gpio))
          return 0;
 
-      func = gpio_function(gpio);
+      result = gpio_function(gpio);
       if (gpio_warnings &&                             // warnings enabled and
-          ((func != 0 && func != 1) ||                 // (already one of the alt functions or
-          (gpio_direction[gpio] == -1 && func == 1)))  // already an output not set from this program)
+          ((result != 0 && result != 1) ||                 // (already one of the alt functions or
+          (gpio_direction[gpio] == -1 && result == 0)))  // already an output not set from this program)
       {
          PyErr_WarnEx(NULL, "This channel is already in use, continuing anyway.  Use GPIO.setwarnings(False) to disable warnings.", 1);
-      }
-
-      // warn about pull/up down on i2c channels
-      if (gpio_warnings) {
-         if (gpio == 2 || gpio == 3) {
-            if (pud == PUD_UP || pud == PUD_DOWN)
-               PyErr_WarnEx(NULL, "A physical pull up resistor is fitted on this channel!", 1);
-         }
       }
 
       if (direction == OUTPUT && (initial == LOW || initial == HIGH)) {
@@ -238,9 +198,6 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
       return NULL;
    }
 
-   if (mmap_gpio_mem())
-      return NULL;
-
    if (direction != INPUT && direction != OUTPUT) {
       PyErr_SetString(PyExc_ValueError, "An invalid direction was passed to setup()");
       return 0;
@@ -265,6 +222,7 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
       return NULL;
    }
 
+   int i, chancount;
    if (chanlist) {
        chancount = PyList_Size(chanlist);
    } else if (chantuple) {
@@ -275,6 +233,8 @@ static PyObject *py_setup_channel(PyObject *self, PyObject *args, PyObject *kwar
        Py_RETURN_NONE;
    }
 
+   // 如果 channel 是 list 或者 tuple 类型， 还要进一步处理
+   PyObject *tempobj;
    for (i=0; i<chancount; i++) {
       if (chanlist) {
          if ((tempobj = PyList_GetItem(chanlist, i)) == NULL) {
@@ -514,18 +474,18 @@ static PyObject *py_getmode(PyObject *self, PyObject *args)
    return value;
 }
 
+// 反过来, 从 gpio 获得 channel 的值
 static unsigned int chan_from_gpio(unsigned int gpio)
 {
-   int chan;
-   int chans;
+   int channel;
+   int channels = 40;
 
    if (gpio_mode == BCM)
       return gpio;
-   else
-      chans = 40;
-   for (chan=1; chan<=chans; chan++)
-      if (*(*pin_to_gpio+chan) == (int)gpio)
-         return chan;
+
+   for (channel=1; channel<=channels; channel++)
+      if (pin_to_gpio[channel] == (int)gpio)
+         return channel;
    return -1;
 }
 
@@ -552,6 +512,7 @@ static void run_py_callbacks(unsigned int gpio)
    }
 }
 
+// 添加callback函数
 static int add_py_callback(unsigned int gpio, PyObject *cb_func)
 {
    struct py_callback *new_py_cb;
@@ -821,9 +782,6 @@ static PyObject *py_gpio_function(PyObject *self, PyObject *args)
    if (get_gpio_number(channel, &gpio))
        return NULL;
 
-   if (mmap_gpio_mem())
-      return NULL;
-
    f = gpio_function(gpio);
    switch (f)
    {
@@ -941,9 +899,6 @@ PyMODINIT_FUNC PyInit__GPIO(void)
    for (i=0; i<54; i++)
       gpio_direction[i] = -1;
 
-   // assume model B+ or A+ or 2B
-   pin_to_gpio = &pin_to_gpio_rev3;
-
    // Add PWM class
    if (PWM_init_PWMType() == NULL)
       return NULL;
@@ -957,14 +912,12 @@ PyMODINIT_FUNC PyInit__GPIO(void)
    if (Py_AtExit(cleanup) != 0)
    {
       setup_error = 1;
-      cleanup();
       return NULL;
    }
 
    if (Py_AtExit(event_cleanup_all) != 0)
    {
       setup_error = 1;
-      cleanup();
       return NULL;
    }
 

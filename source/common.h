@@ -29,10 +29,8 @@ SOFTWARE.
 #define PWM          43
 
 int gpio_mode;
-const int pin_to_gpio_rev3[41];
-const int (*pin_to_gpio)[41];
+const int pin_to_gpio[41];
 int gpio_direction[54];
 int setup_error;
-int module_setup;
 int check_gpio_priv(void);
 int get_gpio_number(int channel, unsigned int *gpio);
