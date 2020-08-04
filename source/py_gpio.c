@@ -798,11 +798,11 @@ static PyObject *py_gpio_function(PyObject *self, PyObject *args)
    f = gpio_function(gpio);
    switch (f)
    {
-      case 0 : f = INPUT;  break;
-      case 1 : f = OUTPUT; break;
+      case INPUT : f = INPUT;  break;
+      case OUTPUT : f = OUTPUT; break;
 
       // ALT 0
-      case 4 : switch (gpio)
+      case ALT0 : switch (gpio)
                {
                   case 0 :
                   case 1 :

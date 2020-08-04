@@ -77,7 +77,7 @@ int gpio_export(unsigned int gpio)
 {
     int fd, len;
     char str_gpio[4];
-    char filename[33];
+    char filename[24];
 
     snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d", gpio);
 
@@ -112,12 +112,13 @@ int gpio_unexport(unsigned int gpio)
     return 0;
 }
 
+// 设置in还是out模式, 这里相比c_gpio.c加了延时
 int gpio_set_direction(unsigned int gpio, unsigned int in_flag)
 {
     int retry;
     struct timespec delay;
     int fd;
-    char filename[33];
+    char filename[34];
 
     snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/direction", gpio);
 
@@ -141,10 +142,11 @@ int gpio_set_direction(unsigned int gpio, unsigned int in_flag)
     return 0;
 }
 
+// 设置gpio(intput模式)的edge状态
 int gpio_set_edge(unsigned int gpio, unsigned int edge)
 {
     int fd;
-    char filename[28];
+    char filename[29];
 
     snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/edge", gpio);
 
@@ -156,10 +158,11 @@ int gpio_set_edge(unsigned int gpio, unsigned int edge)
     return 0;
 }
 
+// 返回该gpio的value的file descriptor
 int open_value_file(unsigned int gpio)
 {
     int fd;
-    char filename[29];
+    char filename[30];
 
     // create file descriptor of value file
     snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/value", gpio);
@@ -169,6 +172,7 @@ int open_value_file(unsigned int gpio)
 }
 
 /********* gpio list functions **********/
+// 返回对应的gpio构造体, 没有则返回NULL
 struct gpios *get_gpio(unsigned int gpio)
 {
     struct gpios *g = gpio_list;
@@ -191,6 +195,8 @@ struct gpios *get_gpio_from_value_fd(int fd)
     return NULL;
 }
 
+// 注册一个gpios
+// 返回gpios类型构造体
 struct gpios *new_gpio(unsigned int gpio)
 {
     struct gpios *new_gpio;
@@ -253,6 +259,7 @@ void delete_gpio(unsigned int gpio)
     }
 }
 
+// 如果gpio在构造体中, 返回该gpio的edge状态; 没有则默认egde为0
 int gpio_event_added(unsigned int gpio)
 {
     struct gpios *g = gpio_list;
@@ -290,9 +297,11 @@ int add_edge_callback(unsigned int gpio, void (*func)(unsigned int gpio))
     return 0;
 }
 
+// 判断gpio是否已被注册在某个callback中
 int callback_exists(unsigned int gpio)
 {
     struct callback *cb = callbacks;
+    // 遍历callback
     while (cb != NULL) {
         if (cb->gpio == gpio)
             return 1;
@@ -519,16 +528,17 @@ int blocking_wait_for_edge(unsigned int gpio, unsigned int edge, int bouncetime,
     struct timeval tv_timenow;
     unsigned long long timenow;
     int finished = 0;
-    int initial_edge = 1;
+    int initial_edge = 1; // = RISING_EDGE
 
+    // 如果已经注册在callback中, 返回-1
     if (callback_exists(gpio))
         return -1;
 
     // add gpio if it has not been added already
-    ed = gpio_event_added(gpio);
+    ed = gpio_event_added(gpio); // 先判断edge状态
     if (ed == (int)edge) {   // get existing record
-        g = get_gpio(gpio);
-        if (g->bouncetime != -666 && g->bouncetime != bouncetime) {
+        g = get_gpio(gpio); // 如果已被注册, 取得该构造体
+        if (g->bouncetime != -666 && g->bouncetime != bouncetime) { // 如果弹跳时间非默认值或与已有设置不一致
             return -1;
         }
     } else if (ed == NO_EDGE) {   // not found so add event
@@ -546,6 +556,7 @@ int blocking_wait_for_edge(unsigned int gpio, unsigned int edge, int bouncetime,
         g->initial_wait = 1;
     }
 
+    // 创建一个对gpio的value的fd的轮询?
     // create epfd_blocking if not already open
     if ((epfd_blocking == -1) && ((epfd_blocking = epoll_create(1)) == -1)) {
         return -2;
@@ -568,7 +579,7 @@ int blocking_wait_for_edge(unsigned int gpio, unsigned int edge, int bouncetime,
             if (errno == EINTR) {
                 continue;
             }
-            epoll_ctl(epfd_blocking, EPOLL_CTL_DEL, g->value_fd, &ev);
+            epoll_ctl(epfd_blocking, EPOLL_CTL_DEL, g->value_fd, &ev); // 删除轮询?
             return -2;
         }
         if (initial_edge) {    // first time triggers with current state, so ignore
